@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speaker Diarization Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .audio-section {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        audio {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        .waveform-container {
+            position: relative;
+            background: #1a1a1a;
+            height: 100px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .timeline {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .results-section {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .results-header {
+            font-size: 18px;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+
+        .speaker-track {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            height: 60px;
+        }
+
+        .speaker-label {
+            width: 150px;
+            padding: 10px 15px;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+
+        .speaker-timeline {
+            position: relative;
+            flex: 1;
+            height: 100%;
+            background: #3a3a3a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .segment {
+            position: absolute;
+            height: 100%;
+            border-radius: 4px;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+
+        .segment:hover {
+            opacity: 1;
+        }
+
+        .speaker-color-0 { background-color: #b8b84d; }
+        .speaker-color-1 { background-color: #5a9aa0; }
+        .speaker-color-2 { background-color: #4a9a5a; }
+        .speaker-color-3 { background-color: #b88a3d; }
+        .speaker-color-4 { background-color: #8a5aa0; }
+        .speaker-color-5 { background-color: #a05a5a; }
+        .speaker-color-6 { background-color: #5aa0a0; }
+        .speaker-color-7 { background-color: #a08a5a; }
+
+        .label-color-0 { background-color: #8a8a35; }
+        .label-color-1 { background-color: #3a6a70; }
+        .label-color-2 { background-color: #2a6a3a; }
+        .label-color-3 { background-color: #8a6a25; }
+        .label-color-4 { background-color: #5a3a70; }
+        .label-color-5 { background-color: #703a3a; }
+        .label-color-6 { background-color: #3a7070; }
+        .label-color-7 { background-color: #706a3a; }
+
+        .controls {
+            margin-bottom: 15px;
+        }
+
+        .file-input {
+            padding: 8px 12px;
+            background: #3a3a3a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+
+        .stats {
+            margin-top: 15px;
+            padding: 10px;
+            background: #3a3a3a;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+            white-space: nowrap;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .error {
+            background: #5a2a2a;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            color: #ff8080;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Speaker Diarization Viewer</h1>
+
+        <div class="audio-section">
+            <div class="controls">
+                <label for="jsonFile" style="margin-right: 10px;">Load Diarization JSON:</label>
+                <input type="file" id="jsonFile" accept=".json" class="file-input">
+            </div>
+            
+            <audio id="audioPlayer" controls></audio>
+            
+            <div class="timeline" id="mainTimeline"></div>
+        </div>
+
+        <div class="results-section">
+            <div class="results-header">Results</div>
+            <div id="error" class="error" style="display: none;"></div>
+            <div id="loading" class="loading">Loading diarization.json...</div>
+            <div id="speakerTracks"></div>
+            <div id="stats" class="stats" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        let diarizationData = [];
+        let audioDuration = 0;
+        let speakers = [];
+
+        // Load default diarization.json
+        async function loadDefaultJSON() {
+            try {
+                const response = await fetch('./diarization.json');
+                if (!response.ok) {
+                    throw new Error('Failed to load diarization.json');
+                }
+                const data = await response.json();
+                processDiarizationData(data);
+            } catch (error) {
+                showError('Could not load diarization.json. Please select a file manually.');
+                console.error(error);
+            }
+        }
+
+        // Handle file input
+        document.getElementById('jsonFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                processDiarizationData(data);
+            } catch (error) {
+                showError('Error loading JSON file: ' + error.message);
+            }
+        });
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        function processDiarizationData(data) {
+            hideError();
+            document.getElementById('loading').style.display = 'none';
+
+            // Sort by start time
+            diarizationData = data.sort((a, b) => a.start - b.start);
+
+            // Get unique speakers
+            speakers = [...new Set(diarizationData.map(d => d.speaker))].sort();
+
+            // Calculate audio duration
+            audioDuration = Math.max(...diarizationData.map(d => d.end));
+
+            // Render visualization
+            renderTimeline();
+            renderSpeakerTracks();
+            renderStats();
+        }
+
+        function renderTimeline() {
+            const timeline = document.getElementById('mainTimeline');
+            timeline.innerHTML = '';
+
+            const steps = 10;
+            const stepSize = audioDuration / steps;
+
+            for (let i = 0; i <= steps; i++) {
+                const time = i * stepSize;
+                const marker = document.createElement('span');
+                marker.textContent = formatTime(time);
+                timeline.appendChild(marker);
+            }
+        }
+
+        function renderSpeakerTracks() {
+            const container = document.getElementById('speakerTracks');
+            container.innerHTML = '';
+
+            speakers.forEach((speaker, index) => {
+                const track = document.createElement('div');
+                track.className = 'speaker-track';
+
+                const label = document.createElement('div');
+                label.className = `speaker-label label-color-${index % 8}`;
+                label.textContent = speaker;
+
+                const timeline = document.createElement('div');
+                timeline.className = 'speaker-timeline';
+
+                // Add segments for this speaker
+                const speakerSegments = diarizationData.filter(d => d.speaker === speaker);
+                speakerSegments.forEach(segment => {
+                    const segmentDiv = document.createElement('div');
+                    segmentDiv.className = `segment speaker-color-${index % 8}`;
+                    
+                    const startPercent = (segment.start / audioDuration) * 100;
+                    const widthPercent = ((segment.end - segment.start) / audioDuration) * 100;
+                    
+                    segmentDiv.style.left = startPercent + '%';
+                    segmentDiv.style.width = widthPercent + '%';
+
+                    // Add tooltip
+                    segmentDiv.addEventListener('mouseenter', (e) => {
+                        showTooltip(e, segment);
+                    });
+                    segmentDiv.addEventListener('mousemove', (e) => {
+                        showTooltip(e, segment);
+                    });
+                    segmentDiv.addEventListener('mouseleave', () => {
+                        hideTooltip();
+                    });
+
+                    timeline.appendChild(segmentDiv);
+                });
+
+                track.appendChild(label);
+                track.appendChild(timeline);
+                container.appendChild(track);
+            });
+
+            document.getElementById('stats').style.display = 'block';
+        }
+
+        function renderStats() {
+            const stats = document.getElementById('stats');
+            
+            const totalDuration = diarizationData.reduce((sum, d) => sum + (d.end - d.start), 0);
+            const numSegments = diarizationData.length;
+            
+            let statsHTML = `
+                <strong>Total speakers:</strong> ${speakers.length} | 
+                <strong>Total segments:</strong> ${numSegments} | 
+                <strong>Total speech duration:</strong> ${formatTime(totalDuration)} | 
+                <strong>Audio duration:</strong> ${formatTime(audioDuration)}
+            `;
+
+            stats.innerHTML = statsHTML;
+        }
+
+        function showTooltip(event, segment) {
+            const tooltip = document.getElementById('tooltip');
+            tooltip.style.display = 'block';
+            tooltip.style.left = (event.pageX + 10) + 'px';
+            tooltip.style.top = (event.pageY - 30) + 'px';
+            tooltip.textContent = `${segment.speaker}: ${formatTime(segment.start)} - ${formatTime(segment.end)}`;
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = (seconds % 60).toFixed(1);
+            return `${mins}:${secs.padStart(4, '0')}`;
+        }
+
+        // Try to load audio.wav if available
+        const audioPlayer = document.getElementById('audioPlayer');
+        audioPlayer.src = './audio.wav';
+        audioPlayer.addEventListener('error', () => {
+            console.log('audio.wav not found, audio player disabled');
+        });
+
+        // Load default JSON on page load
+        loadDefaultJSON();
+    </script>
+</body>
+</html>
+
